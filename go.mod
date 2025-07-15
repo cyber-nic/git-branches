@@ -2,7 +2,10 @@ module github.com/cyber-nic/git-branches
 
 go 1.24.0
 
-require github.com/jedib0t/go-pretty/v6 v6.6.7
+require (
+	github.com/jedib0t/go-pretty/v6 v6.6.7
+	golang.org/x/term v0.29.0
+)
 
 require (
 	github.com/mattn/go-runewidth v0.0.16 // indirect
