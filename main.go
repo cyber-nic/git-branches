@@ -36,15 +36,57 @@ type SortState struct {
 	StyleIndex int
 }
 
-// Table style pairs to cycle through
+// Table styles with varied header, cell, and border formatting
 var stylePairs = [][]table.Style{
 	{table.StyleColoredBright, table.StyleColoredDark},
-	{table.StyleColoredBlackOnBlueWhite, table.StyleColoredBlueWhiteOnBlack},
-	{table.StyleColoredBlackOnCyanWhite, table.StyleColoredCyanWhiteOnBlack},
-	{table.StyleColoredBlackOnGreenWhite, table.StyleColoredGreenWhiteOnBlack},
-	{table.StyleColoredBlackOnMagentaWhite, table.StyleColoredMagentaWhiteOnBlack},
-	{table.StyleColoredBlackOnRedWhite, table.StyleColoredRedWhiteOnBlack},
-	{table.StyleColoredBlackOnYellowWhite, table.StyleColoredYellowWhiteOnBlack},
+	{table.StyleDouble, table.StyleBold},
+	{
+		func() table.Style {
+			style := table.StyleColoredBlackOnBlueWhite
+			style.Options.DrawBorder = true
+			style.Options.SeparateHeader = true
+			style.Options.SeparateRows = true
+			style.Options.SeparateColumns = true
+			style.Box.MiddleVertical = "┃"
+			style.Box.MiddleHorizontal = "━"
+			return style
+		}(),
+		table.StyleColoredBlueWhiteOnBlack,
+	},
+	{
+		func() table.Style {
+			style := table.StyleLight
+			style.Options.DrawBorder = true
+			style.Color.Header = text.Colors{text.BgHiGreen, text.FgBlack, text.Bold}
+			style.Color.Row = text.Colors{text.FgGreen}
+			style.Color.RowAlternate = text.Colors{text.FgHiGreen}
+			return style
+		}(),
+		table.StyleColoredGreenWhiteOnBlack,
+	},
+	{
+		func() table.Style {
+			style := table.StyleDouble
+			style.Options.SeparateRows = true
+			style.Color.Header = text.Colors{text.BgHiMagenta, text.FgBlack, text.Bold}
+			style.Color.Border = text.Colors{text.FgMagenta}
+			return style
+		}(),
+		table.StyleColoredMagentaWhiteOnBlack,
+	},
+	{
+		func() table.Style {
+			style := table.StyleRounded
+			style.Options.DrawBorder = true
+			style.Options.SeparateHeader = true
+			style.Color.Header = text.Colors{text.BgHiYellow, text.FgBlack}
+			style.Color.Row = text.Colors{text.FgYellow}
+			style.Box.PaddingLeft = "╠══"
+			style.Box.PaddingRight = "══╣"
+			return style
+		}(),
+		table.StyleDefault,
+	},
 }
 
 func main() {
@@ -68,7 +110,7 @@ var (
 	colTitleIndex      = "#"
 	colTitleBranch     = "Branch"
 	colTitleLastCommit = "Last Commit"
-	colTitleProgress   = "Ahead\\Behind"
+	colTitleProgress   = "Ahead/Behind"
 	colTotleDelete     = "Delete"
 	rowHeader          = table.Row{
 		colTitleIndex,
@@ -139,14 +181,13 @@ func renderTable(defaultBranch string, sortState SortState) {
 	styleIdx := sortState.StyleIndex % len(stylePairs)
 	currentStyle := stylePairs[styleIdx][0]
 	t.SetStyle(currentStyle)
-	colorBOnW := text.Colors{text.BgWhite, text.FgBlack}
 
 	t.SetColumnConfigs([]table.ColumnConfig{
-		{Name: colTitleIndex, Colors: text.Colors{text.FgWhite}, ColorsHeader: colorBOnW},
-		{Name: colTitleBranch, Colors: text.Colors{text.FgWhite}, ColorsHeader: colorBOnW},
-		{Name: colTitleLastCommit, Colors: text.Colors{text.FgWhite}, ColorsHeader: colorBOnW, ColorsFooter: colorBOnW},
-		{Name: colTitleProgress, Colors: text.Colors{text.FgGreen}, ColorsHeader: colorBOnW, ColorsFooter: colorBOnW},
-		{Name: colTotleDelete, Align: text.AlignRight, Colors: text.Colors{text.FgRed}, ColorsHeader: colorBOnW, ColorsFooter: colorBOnW},
+		{Name: colTitleIndex},
+		{Name: colTitleBranch},
+		{Name: colTitleLastCommit},
+		{Name: colTitleProgress},
+		// {Name: colTotleDelete, Align: text.AlignRight},
 	})
 
 	t.AppendHeader(rowHeader)
@@ -162,8 +203,7 @@ func renderTable(defaultBranch string, sortState SortState) {
 		ahead, behind := getAheadBehind(defaultBranch, br)
 		track := fmt.Sprintf("%d/%d", ahead, behind)
 
-		// 'delete' hyperlink triggers this app with args
-		link := fmt.Sprintf("\x1b]8;;git-branches delete %s\x1b\\delete\x1b]8;;\x1b\\", br)
+		link := fmt.Sprintf("\x1b]8;;x-terminal-emulator:git-branches delete %s\x1b\\delete\x1b]8;;\x1b\\", br)
 
 		t.AppendRow(table.Row{i + 1, br, timeStr, track, link})
 	}
