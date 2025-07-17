@@ -61,6 +61,9 @@ func promptDelete(g *gocui.Gui, v *gocui.View) error {
 }
 
 func confirmDelete(g *gocui.Gui, v *gocui.View) error {
+	if !confirming {
+		return nil // No confirmation needed
+	}
 	exec.Command("git", "branch", "-D", branchToDelete).Run()
 	branches = getLocalBranches()
 	selected = 0 // Reset selection after deletion
