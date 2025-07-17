@@ -8,9 +8,11 @@ import (
 )
 
 var (
-	defaultBranch = "main"
-	branches      []string
-	selected      = 0
+	defaultBranch  = "main"
+	branches       []string
+	branchToDelete string
+	confirming     bool
+	selected       = 0
 )
 
 func main() {
@@ -40,7 +42,8 @@ func main() {
 	}
 }
 
-const viewBranches = "branches"
+const viewBranches = "list_branches"
+const viewDeleteBranch = "delete_branch"
 
 func bindKeys(g *gocui.Gui) error {
 	if err := g.SetKeybinding("", 'q', gocui.ModNone, func(*gocui.Gui, *gocui.View) error { return gocui.ErrQuit }); err != nil {
@@ -50,9 +53,9 @@ func bindKeys(g *gocui.Gui) error {
 	// gui.SetKeybinding("", 'c', gocui.ModNone, makeSorter(SortCreationDate))
 	// gui.SetKeybinding("", 'u', gocui.ModNone, makeSorter(SortCommitDate))
 	// gui.SetKeybinding("", 'r', gocui.ModNone, toggleDirection)
-	// gui.SetKeybinding("", 'd', gocui.ModNone, promptDelete)
-	// gui.SetKeybinding("confirm", 'y', gocui.ModNone, confirmDelete)
-	// gui.SetKeybinding("confirm", 'n', gocui.ModNone, cancelDelete)
+	g.SetKeybinding("", 'd', gocui.ModNone, promptDelete)
+	g.SetKeybinding(viewDeleteBranch, 'y', gocui.ModNone, confirmDelete)
+	g.SetKeybinding(viewDeleteBranch, 'n', gocui.ModNone, cancelDelete)
 
 	if err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, quit); err != nil {
 		return fmt.Errorf("failed to set keybinding: %v", err)
@@ -74,6 +77,22 @@ func bindKeys(g *gocui.Gui) error {
 
 func layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
+
+	if confirming {
+		cx, cy := maxX/4, maxY/3
+		if v, err := g.SetView(viewDeleteBranch, cx, cy, cx*3, cy+4); err != nil && err != gocui.ErrUnknownView {
+			return err
+		} else if err == gocui.ErrUnknownView {
+			v.Title = " confirm "
+			fmt.Fprintf(v, "Delete branch %q? (y/n)", branchToDelete)
+		}
+
+		if _, err := g.SetCurrentView(viewDeleteBranch); err != nil {
+			return fmt.Errorf("failed to set current view: %w", err)
+		}
+	} else {
+		g.DeleteView(viewDeleteBranch)
+	}
 
 	// find the longest branch name for formatting
 	maxBranchLen := 64

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jroimartin/gocui"
 )
 
 func branchExists(name string) bool {
@@ -50,6 +52,29 @@ func getAheadBehind(base, branch string) (int, int) {
 	behind, _ := strconv.Atoi(parts[0])
 	ahead, _ := strconv.Atoi(parts[1])
 	return ahead, behind
+}
+
+func promptDelete(g *gocui.Gui, v *gocui.View) error {
+	_, cy := v.Cursor()
+	// subtract 1 for header
+	if idx := cy - 1; idx >= 0 && idx < len(branches) {
+		branchToDelete = branches[idx]
+		confirming = true
+	}
+	return nil
+}
+
+func confirmDelete(g *gocui.Gui, v *gocui.View) error {
+	exec.Command("git", "branch", "-D", branchToDelete).Run()
+	branches = getLocalBranches()
+	// sortBranches()
+	confirming = false
+	return nil
+}
+
+func cancelDelete(g *gocui.Gui, v *gocui.View) error {
+	confirming = false
+	return nil
 }
 
 // // func makeSorter(t SortType) func(*gocui.Gui, *gocui.View) error {
@@ -121,5 +146,5 @@ func getAheadBehind(base, branch string) (int, int) {
 // 	// // highlight the “cursor” (header is row 0, so data starts at row 1)
 // 	// v.SetCursor(0, selectedIdx+1)
 
-// 	return nil
-// }
+//		return nil
+//	}
