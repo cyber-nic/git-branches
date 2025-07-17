@@ -55,18 +55,15 @@ func getAheadBehind(base, branch string) (int, int) {
 }
 
 func promptDelete(g *gocui.Gui, v *gocui.View) error {
-	_, cy := v.Cursor()
-	// subtract 1 for header
-	if idx := cy - 1; idx >= 0 && idx < len(branches) {
-		branchToDelete = branches[idx]
-		confirming = true
-	}
+	branchToDelete = branches[selected]
+	confirming = true
 	return nil
 }
 
 func confirmDelete(g *gocui.Gui, v *gocui.View) error {
 	exec.Command("git", "branch", "-D", branchToDelete).Run()
 	branches = getLocalBranches()
+	selected = 0 // Reset selection after deletion
 	// sortBranches()
 	confirming = false
 	return nil
@@ -75,6 +72,21 @@ func confirmDelete(g *gocui.Gui, v *gocui.View) error {
 func cancelDelete(g *gocui.Gui, v *gocui.View) error {
 	confirming = false
 	return nil
+}
+
+// func checkoutBranch
+func checkoutBranch(_ *gocui.Gui, _ *gocui.View) error {
+	if selected < 0 || selected >= len(branches) {
+		return nil // No valid selection
+	}
+	branch := branches[selected]
+	if branchExists(branch) {
+		if err := exec.Command("git", "checkout", branch).Run(); err != nil {
+			return fmt.Errorf("failed to checkout branch %s: %v", branch, err)
+		}
+		return gocui.ErrQuit // Exit after checkout
+	}
+	return fmt.Errorf("branch %s does not exist", branch)
 }
 
 // // func makeSorter(t SortType) func(*gocui.Gui, *gocui.View) error {

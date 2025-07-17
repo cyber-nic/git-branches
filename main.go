@@ -49,6 +49,10 @@ func bindKeys(g *gocui.Gui) error {
 	if err := g.SetKeybinding("", 'q', gocui.ModNone, func(*gocui.Gui, *gocui.View) error { return gocui.ErrQuit }); err != nil {
 		return fmt.Errorf("failed to set keybinding: %v", err)
 	}
+	// bind 'return' to checkout the selected branch and exit program
+	if err := g.SetKeybinding(viewBranches, gocui.KeyEnter, gocui.ModNone, checkoutBranch); err != nil {
+		return fmt.Errorf("failed to set keybinding: %v", err)
+	}
 	// gui.SetKeybinding("", 'a', gocui.ModNone, makeSorter(SortAlphabetical))
 	// gui.SetKeybinding("", 'c', gocui.ModNone, makeSorter(SortCreationDate))
 	// gui.SetKeybinding("", 'u', gocui.ModNone, makeSorter(SortCommitDate))
@@ -119,9 +123,8 @@ func layout(g *gocui.Gui) error {
 
 	v, _ := g.View(viewBranches)
 	v.Clear()
-	// header
 
-	// Render each color, prefixing the selected one with an arrow
+	// Render each branch, prefixing the selected one with an arrow
 	for i, b := range branches {
 		ahead, behind := getAheadBehind(defaultBranch, b)
 		lastCom := getLastCommitTime(b).Format("2006-01-02 15:04")
