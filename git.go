@@ -55,6 +55,9 @@ func getAheadBehind(base, branch string) (int, int) {
 }
 
 func promptDelete(g *gocui.Gui, v *gocui.View) error {
+	if branches[selected] == "master" || branches[selected] == "main" {
+		return nil
+	}
 	branchToDelete = branches[selected]
 	confirming = true
 	return nil

@@ -21,7 +21,7 @@ Simple terminal tool to list local Git branches with their last commit date and 
 1. Clone the repository:
 
    ```sh
-   git clone https://github.com/yourusername/git-branches.git
+   git clone https://github.com/cyber-nic/git-branches.git
    cd git-branches
    ```
 
