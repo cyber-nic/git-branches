@@ -7,8 +7,13 @@ import (
 	"github.com/jroimartin/gocui"
 )
 
+const (
+	branchMain   = "main"
+	branchMaster = "master"
+)
+
 var (
-	defaultBranch  = "main"
+	defaultBranch  = branchMain
 	branches       []string
 	branchToDelete string
 	confirming     bool
@@ -17,7 +22,7 @@ var (
 
 func main() {
 	if !branchExists(defaultBranch) {
-		defaultBranch = "master"
+		defaultBranch = branchMaster
 	}
 
 	branches = getLocalBranches()
