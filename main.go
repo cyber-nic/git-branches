@@ -3,8 +3,12 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"sync"
 
+	"github.com/fatih/color"
 	"github.com/jroimartin/gocui"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -13,19 +17,33 @@ const (
 )
 
 var (
-	defaultBranch  = branchMain
-	branches       []string
-	branchToDelete string
-	confirming     bool
-	selected       = 0
+	defaultBranch   = branchMain
+	branches        []string
+	branchToDelete  string
+	confirming      bool
+	selected        = 0
+	branchInfoCache map[string]branchInfo
+	cacheMutex      sync.RWMutex
+	knownBranches   map[string][]string
 )
+
+// branchInfo cache structures
+type branchInfo struct {
+	ahead          int
+	behind         int
+	lastCommitTime string
+	tags           bool
+	name           string // branch name with tags if any
+}
 
 func main() {
 	if !branchExists(defaultBranch) {
 		defaultBranch = branchMaster
 	}
 
+	knownBranches = readKnownBranches()
 	branches = getLocalBranches()
+	branchInfoCache = make(map[string]branchInfo, len(branches))
 
 	g, err := gocui.NewGui(gocui.OutputNormal)
 	if err != nil {
@@ -51,37 +69,85 @@ const viewBranches = "list_branches"
 const viewDeleteBranch = "delete_branch"
 
 func bindKeys(g *gocui.Gui) error {
-	if err := g.SetKeybinding("", 'q', gocui.ModNone, func(*gocui.Gui, *gocui.View) error { return gocui.ErrQuit }); err != nil {
-		return fmt.Errorf("failed to set keybinding: %v", err)
-	}
-	// bind 'return' to checkout the selected branch and exit program
-	if err := g.SetKeybinding(viewBranches, gocui.KeyEnter, gocui.ModNone, checkoutBranch); err != nil {
-		return fmt.Errorf("failed to set keybinding: %v", err)
-	}
-	// gui.SetKeybinding("", 'a', gocui.ModNone, makeSorter(SortAlphabetical))
-	// gui.SetKeybinding("", 'c', gocui.ModNone, makeSorter(SortCreationDate))
-	// gui.SetKeybinding("", 'u', gocui.ModNone, makeSorter(SortCommitDate))
-	// gui.SetKeybinding("", 'r', gocui.ModNone, toggleDirection)
-	g.SetKeybinding("", 'd', gocui.ModNone, promptDelete)
-	g.SetKeybinding(viewDeleteBranch, 'y', gocui.ModNone, confirmDelete)
-	g.SetKeybinding(viewDeleteBranch, 'n', gocui.ModNone, cancelDelete)
 
-	if err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, quit); err != nil {
-		return fmt.Errorf("failed to set keybinding: %v", err)
+	// General keys
+	for key, handler := range map[interface{}]func(*gocui.Gui, *gocui.View) error{
+		gocui.KeyCtrlC:  quit,
+		'q':             quit,
+		gocui.KeyDelete: promptDelete,
+		'd':             promptDelete,
+	} {
+		if err := g.SetKeybinding("", key, gocui.ModNone, handler); err != nil {
+			return fmt.Errorf("failed to set keybinding %v: %w", key, err)
+		}
 	}
 
-	if err := g.SetKeybinding(viewBranches, gocui.KeyArrowUp, gocui.ModNone, cursorUp); err != nil {
-		return fmt.Errorf("failed to set keybinding: %v", err)
+	// Navigation keys for delete branch confirmation view
+	for key, handler := range map[interface{}]func(*gocui.Gui, *gocui.View) error{
+		gocui.KeyEsc:   cancelDelete,
+		gocui.KeyEnter: confirmDelete,
+		'y':            confirmDelete,
+		'n':            cancelDelete,
+	} {
+		if err := g.SetKeybinding(viewDeleteBranch, key, gocui.ModNone, handler); err != nil {
+			return fmt.Errorf("failed to set keybinding %v: %w", key, err)
+		}
 	}
 
-	if err := g.SetKeybinding(viewBranches, gocui.KeyArrowDown, gocui.ModNone, cursorDown); err != nil {
-		return fmt.Errorf("failed to set keybinding: %v", err)
+	// Navigation keys
+	for key, handler := range map[interface{}]func(*gocui.Gui, *gocui.View) error{
+		gocui.KeyArrowUp:     cursorUp,
+		gocui.KeyArrowDown:   cursorDown,
+		gocui.MouseLeft:      mouseClick,
+		gocui.MouseWheelUp:   cursorUp,       // scroll wheel support
+		gocui.MouseWheelDown: cursorDown,     // scroll wheel support
+		gocui.KeyEnter:       checkoutBranch, // checkout selected branch and exit
+
+		// todo: add more navigation keys if needed
+		// gocui.KeyPgup: pageUp,   // page navigation
+		// gocui.KeyPgdn: pageDown, // page navigation
+		// gocui.KeyHome: navigateToFirst,
+		// gocui.KeyEnd:  navigateToLast,
+
+		// todo: sorting
+		// gui.SetKeybinding("", 'a', gocui.ModNone, makeSorter(SortAlphabetical))
+		// gui.SetKeybinding("", 'c', gocui.ModNone, makeSorter(SortCreationDate))
+		// gui.SetKeybinding("", 'u', gocui.ModNone, makeSorter(SortCommitDate))
+		// gui.SetKeybinding("", 'r', gocui.ModNone, toggleDirection)
+	} {
+		if err := g.SetKeybinding(viewBranches, key, gocui.ModNone, handler); err != nil {
+			return fmt.Errorf("failed to set keybinding %v: %w", key, err)
+		}
 	}
 
-	if err := g.SetKeybinding(viewBranches, gocui.MouseLeft, gocui.ModNone, mouseClick); err != nil {
-		return fmt.Errorf("failed to set keybinding: %v", err)
-	}
 	return nil
+}
+
+func cacheBranchInfo(branch string) branchInfo {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+
+	var data branchInfo
+
+	if data, exists := branchInfoCache[branch]; exists {
+		return data
+	}
+
+	name := branch
+	for _, tag := range knownBranches[branch] {
+		name += fmt.Sprintf(" [%s]", tag)
+	}
+
+	ahead, behind := getAheadBehind(defaultBranch, branch)
+	data = branchInfo{
+		ahead:          ahead,
+		behind:         behind,
+		lastCommitTime: getLastCommitTime(branch).Format("2006-01-02 15:04"),
+		tags:           len(knownBranches[branch]) > 0,
+		name:           name,
+	}
+	branchInfoCache[branch] = data
+	return data
 }
 
 func layout(g *gocui.Gui) error {
@@ -93,7 +159,7 @@ func layout(g *gocui.Gui) error {
 			return err
 		} else if err == gocui.ErrUnknownView {
 			v.Title = " confirm "
-			fmt.Fprintf(v, "Delete branch %q? (y/n)", branchToDelete)
+			fmt.Fprintf(v, "Delete branch %q? (Y/n)", branchToDelete)
 		}
 
 		if _, err := g.SetCurrentView(viewDeleteBranch); err != nil {
@@ -101,19 +167,35 @@ func layout(g *gocui.Gui) error {
 		}
 	} else {
 		g.DeleteView(viewDeleteBranch)
+		if len(g.Views()) > 0 {
+			if _, err := g.SetCurrentView(viewBranches); err != nil {
+				log.Println("Failed to set current view:", err)
+				return fmt.Errorf("failed to set current view: %w", err)
+			}
+		}
 	}
-
-	// find the longest branch name for formatting
-	maxBranchLen := 64
+	// Calculate available width and allocate space for columns
+	maxBranchLen := 0
 	for _, br := range branches {
 		if len(br) > maxBranchLen {
 			maxBranchLen = len(br)
 		}
 	}
-	// Adjust the header to match the longest branch name
-	// lineFormat := fmt.Sprintf("%-4s %-*s %16s %9s", maxBranchLen)
-	lineFormat := fmt.Sprintf("%%-4d %%-%ds %%32s %%20s", maxBranchLen)
-	lineTitle := fmt.Sprintf("%-4s %-*s %32s %20s\n", "#", maxBranchLen, "Branch", "Last Commit", "Ahead/Behind")
+
+	// Fixed widths for other columns
+	idxWidth := 4   // Column for index number
+	dateWidth := 19 // Last commit date column
+	statWidth := 12 // Ahead/Behind stats column
+
+	// Calculate branch column width to fill remaining space
+	branchWidth := maxX - idxWidth - dateWidth - statWidth - 5 // 5 for spacing/borders
+	if branchWidth < 10 {
+		branchWidth = 10 // Minimum width
+	}
+
+	// Create format strings that use the full width
+	lineFormat := fmt.Sprintf("%%-%dd %%-%ds %%-%ds %%-%ds", idxWidth, branchWidth, dateWidth, statWidth)
+	lineTitle := fmt.Sprintf("%-*s %-*s %-*s %-*s", idxWidth, "#", branchWidth, "Branch", dateWidth, "Last Commit", statWidth, "+/-")
 
 	if v, err := g.SetView(viewBranches, 0, 0, maxX-1, maxY-3); err != nil {
 		if err != gocui.ErrUnknownView {
@@ -131,23 +213,33 @@ func layout(g *gocui.Gui) error {
 
 	// Render each branch, prefixing the selected one with an arrow
 	for i, b := range branches {
-		ahead, behind := getAheadBehind(defaultBranch, b)
-		lastCom := getLastCommitTime(b).Format("2006-01-02 15:04")
+		// build and cache branch info
+		info := cacheBranchInfo(b)
+		// line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
+		// fmt.Fprintf(v, "  %s\n", line)
 
-		line := fmt.Sprintf(lineFormat, i+1, b, lastCom, fmt.Sprintf("%d/%d", ahead, behind))
-
-		if i == selected {
-			fmt.Fprintf(v, "\033[30;42m➜ %s\033[0m\n", line)
-			continue
+		switch {
+		case i == selected: // green background with black text
+			line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
+			fmt.Fprintf(v, "%s\n", color.New(color.BgGreen, color.FgBlack).Sprint("➜ "+line))
+		case info.tags: // dark yellow foreground
+			name := info.name
+			if info.tags {
+				name = color.New(color.FgYellow).Sprint(name)
+			}
+			line := fmt.Sprintf(lineFormat, i+1, name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
+			fmt.Fprintf(v, "  %s\n", line)
+		default: // normal branch line
+			line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
+			fmt.Fprintf(v, "  %s\n", line)
 		}
-		fmt.Fprintf(v, "  %s\n", line)
+
 	}
 
 	if v, err := g.SetView("help", 0, maxY-3, maxX-1, maxY-1); err != nil && err != gocui.ErrUnknownView {
 		return err
 	} else if err == gocui.ErrUnknownView {
-		fmt.Fprintf(v, "sort  [i] Index  [a] Alphabetical  [c] Creation  [u] Commit  [r] Reverse")
-		fmt.Fprintf(v, "[d] Delete  [q] Quit")
+		fmt.Fprintf(v, "sort by [i] Index  [a] Alphabetical  [c] CreatedAt  [u] LastCommit  [r] Reverse Sort ; [d] Delete  [q] Quit")
 	}
 
 	return nil
@@ -180,4 +272,27 @@ func mouseClick(g *gocui.Gui, v *gocui.View) error {
 
 func quit(g *gocui.Gui, v *gocui.View) error {
 	return gocui.ErrQuit
+}
+
+// readKnownBranches reads the .known_branches.yml file and returns a map of branch names to labels.
+// Returns an empty map if the file doesn't exist.
+func readKnownBranches() map[string][]string {
+	// Try to open the file
+	file, err := os.Open(".known_branches.yml")
+	if err != nil {
+		// Return empty map if file doesn't exist
+		return make(map[string][]string)
+	}
+	defer file.Close()
+
+	// Decode the YAML file
+	var branchLabels map[string][]string
+	decoder := yaml.NewDecoder(file)
+	if err := decoder.Decode(&branchLabels); err != nil {
+		// If there's an error parsing, log it and return empty map
+		log.Printf("Error parsing .known_branches.yml: %v", err)
+		return make(map[string][]string)
+	}
+
+	return branchLabels
 }
