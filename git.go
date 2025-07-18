@@ -72,7 +72,6 @@ func confirmDelete(g *gocui.Gui, v *gocui.View) error {
 	exec.Command("git", "branch", "-D", branchToDelete).Run()
 	branches = getLocalBranches()
 	selected = 0 // Reset selection after deletion
-	// sortBranches()
 	confirming = false
 	return nil
 }
@@ -96,75 +95,3 @@ func checkoutBranch(_ *gocui.Gui, _ *gocui.View) error {
 	}
 	return fmt.Errorf("branch %s does not exist", branch)
 }
-
-// // func makeSorter(t SortType) func(*gocui.Gui, *gocui.View) error {
-// // 	return func(g *gocui.Gui, v *gocui.View) error {
-// // 		sortState.Type = t
-// // 		sortBranches()
-// // 		return nil
-// // 	}
-// // }
-
-// // func toggleDirection(g *gocui.Gui, v *gocui.View) error {
-// // 	if sortState.Direction == SortAscending {
-// // 		sortState.Direction = SortDescending
-// // 	} else {
-// // 		sortState.Direction = SortAscending
-// // 	}
-// // 	sortBranches()
-// // 	return nil
-// // }
-
-// // shared sort logic; updates view via gui.Update if ready
-// func sortBranches(g *gocui.Gui) {
-// 	switch sortState.Type {
-// 	case SortAlphabetical:
-// 		if sortState.Direction == SortAscending {
-// 			sort.Strings(branches)
-// 		} else {
-// 			sort.Sort(sort.Reverse(sort.StringSlice(branches)))
-// 		}
-// 	case SortCreationDate:
-// 		sort.Slice(branches, func(i, j int) bool {
-// 			t1 := getBranchCreationTime(branches[i])
-// 			t2 := getBranchCreationTime(branches[j])
-// 			if sortState.Direction == SortAscending {
-// 				return t1.Before(t2)
-// 			}
-// 			return t1.After(t2)
-// 		})
-// 	case SortCommitDate:
-// 		sort.Slice(branches, func(i, j int) bool {
-// 			t1 := getLastCommitTime(branches[i])
-// 			t2 := getLastCommitTime(branches[j])
-// 			if sortState.Direction == SortAscending {
-// 				return t1.Before(t2)
-// 			}
-// 			return t1.After(t2)
-// 		})
-// 	}
-// 	if g != nil {
-// 		g.Update(func(gui *gocui.Gui) error { return refreshBranchesView(gui) })
-// 	}
-// }
-
-// func refreshBranchesView(g *gocui.Gui) error {
-// 	v, _ := g.View(string(Branches))
-// 	v.Clear()
-// 	fmt.Fprintf(v, "%-4s %-20s %16s %9s\n", "#", "Branch", "Last Commit", "Ahead/Behind")
-// 	for i, br := range branches {
-// 		lt := getLastCommitTime(br).Format("2006-01-02 15:04")
-// 		a, b := getAheadBehind(defaultBranch, br)
-// 		fmt.Fprintf(v, "%-4d %-20s %16s %9s\n",
-// 			i+1, br, lt, fmt.Sprintf("%d/%d", a, b),
-// 		)
-// 	}
-// 	// // keep selectedIdx in range
-// 	// if selectedIdx >= len(branches) {
-// 	// 	selectedIdx = len(branches) - 1
-// 	// }
-// 	// // highlight the “cursor” (header is row 0, so data starts at row 1)
-// 	// v.SetCursor(0, selectedIdx+1)
-
-//		return nil
-//	}

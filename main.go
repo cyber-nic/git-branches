@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"sync"
 
@@ -36,7 +37,10 @@ type branchInfo struct {
 	name           string // branch name with tags if any
 }
 
-func main() {
+func initialize() {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+
 	if !branchExists(defaultBranch) {
 		defaultBranch = branchMaster
 	}
@@ -44,6 +48,10 @@ func main() {
 	knownBranches = readKnownBranches()
 	branches = getLocalBranches()
 	branchInfoCache = make(map[string]branchInfo, len(branches))
+}
+
+func main() {
+	initialize()
 
 	g, err := gocui.NewGui(gocui.OutputNormal)
 	if err != nil {
@@ -96,6 +104,7 @@ func bindKeys(g *gocui.Gui) error {
 
 	// Navigation keys
 	for key, handler := range map[interface{}]func(*gocui.Gui, *gocui.View) error{
+		'r':                  refreshBranches,
 		gocui.KeyArrowUp:     cursorUp,
 		gocui.KeyArrowDown:   cursorDown,
 		gocui.MouseLeft:      mouseClick,
@@ -109,11 +118,6 @@ func bindKeys(g *gocui.Gui) error {
 		// gocui.KeyHome: navigateToFirst,
 		// gocui.KeyEnd:  navigateToLast,
 
-		// todo: sorting
-		// gui.SetKeybinding("", 'a', gocui.ModNone, makeSorter(SortAlphabetical))
-		// gui.SetKeybinding("", 'c', gocui.ModNone, makeSorter(SortCreationDate))
-		// gui.SetKeybinding("", 'u', gocui.ModNone, makeSorter(SortCommitDate))
-		// gui.SetKeybinding("", 'r', gocui.ModNone, toggleDirection)
 	} {
 		if err := g.SetKeybinding(viewBranches, key, gocui.ModNone, handler); err != nil {
 			return fmt.Errorf("failed to set keybinding %v: %w", key, err)
@@ -189,9 +193,7 @@ func layout(g *gocui.Gui) error {
 
 	// Calculate branch column width to fill remaining space
 	branchWidth := maxX - idxWidth - dateWidth - statWidth - 5 // 5 for spacing/borders
-	if branchWidth < 10 {
-		branchWidth = 10 // Minimum width
-	}
+	branchWidth = int(math.Max(float64(branchWidth), 10))      // Ensure minimum width
 
 	// Create format strings that use the full width
 	lineFormat := fmt.Sprintf("%%-%dd %%-%ds %%-%ds %%-%ds", idxWidth, branchWidth, dateWidth, statWidth)
@@ -215,21 +217,15 @@ func layout(g *gocui.Gui) error {
 	for i, b := range branches {
 		// build and cache branch info
 		info := cacheBranchInfo(b)
-		// line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
-		// fmt.Fprintf(v, "  %s\n", line)
 
 		switch {
 		case i == selected: // green background with black text
 			line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
 			fmt.Fprintf(v, "%s\n", color.New(color.BgGreen, color.FgBlack).Sprint("➜ "+line))
 		case info.tags: // dark yellow foreground
-			name := info.name
-			if info.tags {
-				name = color.New(color.FgYellow).Sprint(name)
-			}
-			line := fmt.Sprintf(lineFormat, i+1, name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
-			fmt.Fprintf(v, "  %s\n", line)
-		default: // normal branch line
+			line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
+			fmt.Fprintf(v, "  %s\n", color.New(color.FgYellow).Sprint(line))
+		default: // default color
 			line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
 			fmt.Fprintf(v, "  %s\n", line)
 		}
@@ -239,9 +235,14 @@ func layout(g *gocui.Gui) error {
 	if v, err := g.SetView("help", 0, maxY-3, maxX-1, maxY-1); err != nil && err != gocui.ErrUnknownView {
 		return err
 	} else if err == gocui.ErrUnknownView {
-		fmt.Fprintf(v, "sort by [i] Index  [a] Alphabetical  [c] CreatedAt  [u] LastCommit  [r] Reverse Sort ; [d] Delete  [q] Quit")
+		fmt.Fprintf(v, "[r] refresh  [p] pull [d] Delete  [q] Quit")
 	}
 
+	return nil
+}
+
+func refreshBranches(g *gocui.Gui, v *gocui.View) error {
+	initialize() // Reinitialize to refresh branches and cache
 	return nil
 }
 
