@@ -81,7 +81,7 @@ func cancelDelete(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
-// func checkoutBranch
+// checkoutBranch checks out the selected branch
 func checkoutBranch(_ *gocui.Gui, _ *gocui.View) error {
 	if selected < 0 || selected >= len(branches) {
 		return nil // No valid selection
@@ -94,4 +94,57 @@ func checkoutBranch(_ *gocui.Gui, _ *gocui.View) error {
 		return gocui.ErrQuit // Exit after checkout
 	}
 	return fmt.Errorf("branch %s does not exist", branch)
+}
+
+// pullBranch pulls the selected branch
+func pullBranch(_ *gocui.Gui, _ *gocui.View) error {
+	if selected < 0 || selected >= len(branches) {
+		return nil // No valid selection
+	}
+
+	branch := branches[selected]
+	if !branchExists(branch) {
+		return fmt.Errorf("branch %s does not exist locally", branch)
+	}
+
+	// Check if the branch exists remotely
+	if !isRemoteBranch(branch) {
+		return nil
+	}
+
+	if err := exec.Command("git", "pull", "origin", branch).Run(); err != nil {
+		return fmt.Errorf("failed to pull branch %s: %v", branch, err)
+	}
+
+	initialize()
+	return nil
+}
+
+func fetchBranch(_ *gocui.Gui, _ *gocui.View) error {
+	if selected < 0 || selected >= len(branches) {
+		return nil // No valid selection
+	}
+
+	branch := branches[selected]
+	if !branchExists(branch) {
+		return fmt.Errorf("branch %s does not exist", branch)
+	}
+
+	// Check if the branch exists remotely
+	if !isRemoteBranch(branch) {
+		return nil
+	}
+
+	if err := exec.Command("git", "fetch", branch).Run(); err != nil {
+		return fmt.Errorf("failed to fetch branch %s: %v", branch, err)
+	}
+
+	initialize()
+	return nil
+}
+
+// isRemoteBranch checks if the branch exists on the remote repository
+func isRemoteBranch(branch string) bool {
+	remoteBranch := fmt.Sprintf("origin/%s", branch)
+	return exec.Command("git", "rev-parse", "--verify", remoteBranch).Run() == nil
 }

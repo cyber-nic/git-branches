@@ -105,6 +105,8 @@ func bindKeys(g *gocui.Gui) error {
 	// Navigation keys
 	for key, handler := range map[interface{}]func(*gocui.Gui, *gocui.View) error{
 		'r':                  refreshBranches,
+		'f':                  fetchBranch,
+		'p':                  pullBranch,
 		gocui.KeyArrowUp:     cursorUp,
 		gocui.KeyArrowDown:   cursorDown,
 		gocui.MouseLeft:      mouseClick,
