@@ -141,6 +141,11 @@ func cacheBranchInfo(branch string) branchInfo {
 
 	name := branch
 	for _, tag := range knownBranches[branch] {
+		// escapte the trailing ] if the last char is non-ASCII
+		if len(tag) > 0 && tag[len(tag)-1] >= '\u0080' {
+			name += fmt.Sprintf(" [%s/]", tag)
+			continue
+		}
 		name += fmt.Sprintf(" [%s]", tag)
 	}
 
@@ -224,9 +229,8 @@ func layout(g *gocui.Gui) error {
 		case i == selected: // green background with black text
 			line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
 			fmt.Fprintf(v, "%s\n", color.New(color.BgGreen, color.FgBlack).Sprint("➜ "+line))
-		case info.tags: // dark yellow foreground
-			line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
-			fmt.Fprintf(v, "  %s\n", color.New(color.FgYellow).Sprint(line))
+		// 	line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
+		// 	fmt.Fprintf(v, "  %s\n", color.New(color.FgGreen).Sprint(line))
 		default: // default color
 			line := fmt.Sprintf(lineFormat, i+1, info.name, info.lastCommitTime, fmt.Sprintf("%d/%d", info.ahead, info.behind))
 			fmt.Fprintf(v, "  %s\n", line)
@@ -237,7 +241,7 @@ func layout(g *gocui.Gui) error {
 	if v, err := g.SetView("help", 0, maxY-3, maxX-1, maxY-1); err != nil && err != gocui.ErrUnknownView {
 		return err
 	} else if err == gocui.ErrUnknownView {
-		fmt.Fprintf(v, "[r] refresh  [p] pull [d] Delete  [q] Quit")
+		fmt.Fprintf(v, "[r] refresh  [f] fetch   [p] pull  [d] delete  [q] quit")
 	}
 
 	return nil
